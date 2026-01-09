@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Daily Arbitrage System</title>
+    
+    <!-- Fonts & Icons -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <!-- Custom CSS -->
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+    <header>
+        <div class="logo-container">
+            <i class="fas fa-chart-line fa-2x" style="color: var(--primary);"></i>
+            <h1>Arbitrage System</h1>
+        </div>
+        <div class="user-actions">
+            <!-- Future: User Profile -->
+        </div>
+    </header>
+
+    <main>
+        <!-- Top Stats Row -->
+        <section class="stats-grid">
+            <div class="card">
+                <div class="card-title">
+                    <i class="fas fa-wallet"></i> Wallet Base
+                </div>
+                <div class="flex-between">
+                    <h2 id="walletBalance" class="stat-value">0.00 USDT</h2>
+                    <button class="btn btn-outline" onclick="editWallet()">
+                        <i class="fas fa-edit"></i>
+                    </button>
+                </div>
+                <span class="stat-label">Saldo disponible para arbitraje</span>
+            </div>
+
+            <div class="card">
+                <div class="card-title">
+                    <i class="fas fa-trophy"></i> Último Spread
+                </div>
+                <h2 id="lastSpread" class="stat-value">0.00%</h2>
+                <span id="lastSpreadAmount" class="stat-label text-success">+0.00 USDT</span>
+            </div>
+        </section>
+
+        <!-- Active Cycle / Start Cycle Section -->
+        <section id="cycleSection" class="card">
+            <!-- State: No Active Cycle -->
+            <div id="startCycleState" class="text-center" style="padding: 2rem; text-align: center;">
+                <i class="fas fa-rocket fa-4x mb-2" style="color: var(--primary); margin-bottom: 25px;"></i>
+                <h2 style="margin-bottom: 1rem;">Iniciar Nuevo Ciclo</h2>
+                <p style="color: var(--text-secondary); margin-bottom: 2rem;">
+                    Comienza una nueva rueda de arbitraje. El saldo actual de la wallet se congelará como base.
+                </p>
+                <button class="btn btn-primary" onclick="startCycle()">
+                    <i class="fas fa-play"></i> Comenzar Arbitraje
+                </button>
+            </div>
+
+            <!-- State: Active Cycle Wizard -->
+            <div id="activeCycleState" class="hidden">
+                <div class="card-header">
+                    <h3><i class="fas fa-circle-notch fa-spin"></i> Ciclo en Progreso</h3>
+                    <span class="status-badge status-open" id="cycleIdDisplay">ID: #0</span>
+                </div>
+
+                <!-- Wizard Steps Indicator -->
+                <div class="wizard-steps">
+                    <div class="step-indicator active" data-step="1">1</div>
+                    <div class="step-indicator" data-step="2">2</div>
+                    <div class="step-indicator" data-step="3">3</div>
+                    <div class="step-indicator" data-step="4">4</div>
+                    <div class="step-indicator" data-step="5">5</div>
+                </div>
+
+                <!-- Step 1: Sell USDT -->
+                <div id="step1" class="step-content">
+                    <h4>Paso 1: Venta USDT -> VES</h4>
+                    <p class="mb-2 text-secondary">Vende tus USDT al mejor precio de mercado.</p>
+                    <form onsubmit="handleStep(event, 'SELL_USDT_TO_VES')">
+                        <div class="grid-2">
+                            <div class="form-group">
+                                <label>USDT a Vender</label>
+                                <input type="number" step="0.01" name="input_amount" id="step1_input" required oninput="calcStep1()">
+                            </div>
+                            <div class="form-group">
+                                <label>Tasa de Cambio (VES/USDT)</label>
+                                <input type="number" step="0.001" name="exchange_rate" id="step1_rate" required oninput="calcStep1()">
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label>Total VES Recibidos (Estimado)</label>
+                            <input type="number" step="0.01" name="output_amount" id="step1_output" required>
+                        </div>
+                        <button type="submit" class="btn btn-primary w-full">Confirmar Venta</button>
+                    </form>
+                </div>
+
+                <!-- Step 2: Buy Cash -->
+                <div id="step2" class="step-content hidden">
+                    <h4>Paso 2: Compra VES -> USD Efectivo</h4>
+                    <p class="mb-2 text-secondary">Usa los VES para comprar dólares en efectivo.</p>
+                    <form onsubmit="handleStep(event, 'BUY_USD_CASH')">
+                        <div class="grid-2">
+                            <div class="form-group">
+                                <label>VES a Gastar</label>
+                                <input type="number" step="0.01" name="input_amount" id="step2_input" required oninput="calcStep2()">
+                            </div>
+                            <div class="form-group">
+                                <label>Tasa de Compra (VES/USD)</label>
+                                <input type="number" step="0.001" name="exchange_rate" id="step2_rate" required oninput="calcStep2()">
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label>Total USD Efectivo (Estimado)</label>
+                            <input type="number" step="0.01" name="output_amount" id="step2_output" required>
+                        </div>
+                        <button type="submit" class="btn btn-primary w-full">Confirmar Compra Efectivo</button>
+                    </form>
+                </div>
+
+                <!-- Step 3: Deposit Kontigo -->
+                <div id="step3" class="step-content hidden">
+                    <h4>Paso 3: Depósito en Kontigo</h4>
+                    <p class="mb-2 text-secondary">Deposita el efectivo. La comisión es variable, ingresa lo recibido.</p>
+                    <form onsubmit="handleStep(event, 'DEPOSIT_KONTIGO')">
+                        <div class="grid-2">
+                            <div class="form-group">
+                                <label>USD Efectivo Entregado</label>
+                                <input type="number" step="0.01" name="input_amount" id="step3_input" required>
+                            </div>
+                            <div class="form-group">
+                                <label>USDC Recibido en Kontigo</label>
+                                <input type="number" step="0.01" name="output_amount" id="step3_output" required>
+                            </div>
+                        </div>
+                        <button type="submit" class="btn btn-primary w-full">Confirmar Depósito</button>
+                    </form>
+                </div>
+
+                <!-- Step 4: Send to Binance -->
+                <div id="step4" class="step-content hidden">
+                    <h4>Paso 4: Envío a Binance</h4>
+                    <p class="mb-2 text-secondary">Envía los fondos de regreso a Binance.</p>
+                    <form onsubmit="handleStep(event, 'SEND_TO_BINANCE')">
+                        <div class="grid-2">
+                            <div class="form-group">
+                                <label>USDC Enviado desde Kontigo</label>
+                                <input type="number" step="0.01" name="input_amount" id="step4_input" required oninput="calcStep4()">
+                            </div>
+                            <div class="form-group">
+                                <label>Comisión de Red (USDC)</label>
+                                <input type="number" step="0.01" name="fee" id="step4_fee" value="0" required oninput="calcStep4()">
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label>Total a Recibir en Binance</label>
+                            <input type="number" step="0.01" name="output_amount" id="step4_output" required>
+                        </div>
+                        <button type="submit" class="btn btn-primary w-full">Confirmar Envío</button>
+                    </form>
+                </div>
+
+                <!-- Step 5: Convert Back -->
+                <div id="step5" class="step-content hidden">
+                    <h4>Paso 5: Conversión Final -> USDT</h4>
+                    <p class="mb-2 text-secondary">Convierte los USDC recibidos a USDT para cerrar el ciclo.</p>
+                    <form onsubmit="handleCloseCycle(event)">
+                        <div class="grid-2">
+                            <div class="form-group">
+                                <label>USDC a Convertir</label>
+                                <input type="number" step="0.01" name="input_amount" id="step5_input" required>
+                            </div>
+                            <div class="form-group">
+                                <label>USDT Finales Obtenidos</label>
+                                <input type="number" step="0.01" name="output_amount" id="step5_output" required>
+                            </div>
+                        </div>
+                        <button type="submit" class="btn btn-primary w-full"> Finalizar Ciclo y Calcular Spread</button>
+                    </form>
+                </div>
+
+            </div>
+        </section>
+
+        <!-- History Section -->
+        <section class="card">
+            <div class="card-header">
+                <div class="card-title">
+                    <i class="fas fa-history"></i> Historial de Ciclos
+                </div>
+                <button class="btn btn-outline" onclick="loadHistory()">Actualizar</button>
+            </div>
+            <div class="table-container">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th>Fecha</th>
+                            <th>Inicio</th>
+                            <th>Fin</th>
+                            <th>Spread</th>
+                            <th>Estado</th>
+                        </tr>
+                    </thead>
+                    <tbody id="historyTableBody">
+                        <tr><td colspan="6">Cargando...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+    </main>
+
+    <script src="js/app.js"></script>
+</body>
+</html>
