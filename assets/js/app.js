@@ -166,6 +166,19 @@ async function loadWallet() {
 
         const secondaryWallets = wallets.filter(w => w.id !== 1 && parseFloat(w.balance) > 0);
 
+        // VES Wallet check for VES Cycle button
+        const vesWallet = wallets.find(w => w.id === 2);
+        const vesBalance = vesWallet ? parseFloat(vesWallet.balance) : 0;
+        const vesCycleBtn = document.getElementById('startVesCycleBtn');
+        if (vesCycleBtn) {
+            if (vesBalance > 0) {
+                vesCycleBtn.classList.remove('hidden');
+                vesCycleBtn.innerHTML = `<i class="fas fa-sync-alt"></i> Iniciar Ciclo VES (${formatMoney(vesBalance)} VES)`;
+            } else {
+                vesCycleBtn.classList.add('hidden');
+            }
+        }
+
         if (secondaryWallets.length > 0) {
             secondaryContainer.classList.remove('hidden');
             secondaryWallets.forEach(w => {
@@ -272,8 +285,32 @@ async function startCycle() {
             const res = await fetchWithAuth(`${API_BASE}/cycles/start`, { method: 'POST' });
             const data = await res.json();
 
-            if (data.success) {
+            if (res.status === 201) {
                 checkActiveCycle();
+            } else {
+                // Manejo de Error específico para Kontigo
+                if (data.error && data.error.includes('Kontigo')) {
+                    showModal('Fondos en Kontigo', data.error + '\n\nDebes mover esos fondos a Binance primero.');
+                } else {
+                    showModal('Error', data.error);
+                }
+            }
+        } catch (err) {
+            showModal('Error', 'Error de conexión');
+        }
+    });
+}
+
+async function startVesCycle() {
+    showConfirm('Iniciar Ciclo VES→USD', '¿Deseas iniciar un ciclo usando tu saldo en VES? Este saldo se usará para comprar USD en efectivo.', async () => {
+        try {
+            const res = await fetchWithAuth(`${API_BASE}/cycles/start-ves`, { method: 'POST' });
+            const data = await res.json();
+
+            if (res.status === 201) {
+                showModal('Ciclo VES Iniciado', `Se inició el ciclo #${data.cycleId} con ${formatMoney(data.initialBalance)} VES.`);
+                checkActiveCycle();
+                loadWallet();
             } else {
                 showModal('Error', data.error);
             }
@@ -295,6 +332,11 @@ async function handleStep(e, stepType) {
         fee: parseFloat(formData.get('fee') || 0)
     };
 
+    // Para Step 4 (SEND_TO_BINANCE), agregar debit_amount
+    if (stepType === 'SEND_TO_BINANCE') {
+        body.debit_amount = parseFloat(formData.get('debit_amount') || 0);
+    }
+
     try {
         const res = await fetchWithAuth(`${API_BASE}/cycles/${currentCycleId}/step`, {
             method: 'POST',
@@ -304,7 +346,12 @@ async function handleStep(e, stepType) {
         const data = await res.json();
 
         if (data.success) {
+            // Mostrar VES surplus si aplica
+            if (data.ves_surplus && data.ves_surplus > 0) {
+                showModal('Ganancia VES', `Se acreditaron ${formatMoney(data.ves_surplus)} VES a tu billetera.`);
+            }
             checkActiveCycle();
+            loadWallet();
             form.reset();
         } else {
             showModal('Error', data.error);

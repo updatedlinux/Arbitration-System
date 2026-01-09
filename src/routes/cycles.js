@@ -37,6 +37,68 @@ router.get('/active', async (req, res) => {
 
 /**
  * @swagger
+ * /cycles/start-ves:
+ *   post:
+ *     summary: Iniciar un ciclo VES->USD (usando saldo de VES acumulado)
+ *     tags: [Cycles]
+ *     responses:
+ *       201:
+ *         description: Ciclo VES iniciado
+ */
+router.post('/start-ves', async (req, res) => {
+    const connection = await pool.getConnection();
+    try {
+        await connection.beginTransaction();
+
+        // 1. Verificar si hay ciclo abierto
+        const [active] = await connection.query('SELECT id FROM cycles WHERE status = "OPEN"');
+        if (active.length > 0) {
+            throw new Error('Ya existe un ciclo activo. Debe cerrarlo antes de iniciar otro.');
+        }
+
+        // 2. Obtener saldo de VES (Wallet ID 2)
+        const [vesWallet] = await connection.query('SELECT balance FROM wallet WHERE id = 2');
+        const vesBalance = parseFloat(vesWallet[0].balance);
+
+        if (vesBalance <= 0) {
+            throw new Error('No tienes saldo en VES para iniciar este ciclo.');
+        }
+
+        // 3. Crear ciclo tipo VES_TO_USD
+        const [result] = await connection.query(
+            'INSERT INTO cycles (cycle_type, initial_balance, initial_currency, status) VALUES ("VES_TO_USD", ?, "VES", "OPEN")',
+            [vesBalance]
+        );
+        const cycleId = result.insertId;
+
+        // 4. Descontar VES de la wallet (lo estamos usando en el ciclo)
+        await connection.query('UPDATE wallet SET balance = 0 WHERE id = 2');
+
+        // 5. Auditoría
+        await connection.query(
+            'INSERT INTO transactions (wallet_id, cycle_id, type, amount, description) VALUES (?, ?, "CYCLE_START", ?, ?)',
+            [2, cycleId, -vesBalance, `Inicio de ciclo VES→USD #${cycleId} con ${vesBalance} VES`]
+        );
+
+        await connection.commit();
+        res.status(201).json({
+            success: true,
+            message: 'Ciclo VES→USD iniciado',
+            cycleId,
+            initialBalance: vesBalance,
+            currency: 'VES'
+        });
+
+    } catch (error) {
+        await connection.rollback();
+        res.status(400).json({ error: error.message });
+    } finally {
+        connection.release();
+    }
+});
+
+/**
+ * @swagger
  * /cycles/start:
  *   post:
  *     summary: Iniciar un nuevo ciclo de arbitraje
@@ -134,24 +196,63 @@ router.post('/start', async (req, res) => {
  */
 router.post('/:id/step', async (req, res) => {
     const { id } = req.params;
-    const { step_type, input_amount, output_amount, exchange_rate, fee, notes } = req.body;
-
-    // TODO: Validar que el step_type corresponda a la secuencia lógica (opcional pero recomendado)
-    // 1: SELL_USDT_TO_VES, 2: BUY_USD_CASH, 3: DEPOSIT_KONTIGO, 4: SEND_TO_BINANCE, 5: CONVERT_TO_USDT
+    const { step_type, input_amount, output_amount, exchange_rate, fee, notes, debit_amount } = req.body;
+    const connection = await pool.getConnection();
 
     try {
-        await pool.query(
+        await connection.beginTransaction();
+
+        let vesSurplus = 0;
+
+        // Lógica especial para BUY_USD_CASH: Calcular VES Surplus
+        if (step_type === 'BUY_USD_CASH') {
+            // Obtener VES recibidos del paso anterior (SELL_USDT_TO_VES)
+            const [prevStep] = await connection.query(
+                'SELECT output_amount FROM cycle_steps WHERE cycle_id = ? AND step_type = "SELL_USDT_TO_VES" ORDER BY id DESC LIMIT 1',
+                [id]
+            );
+
+            if (prevStep.length > 0) {
+                const vesReceived = parseFloat(prevStep[0].output_amount);
+                const vesSpent = parseFloat(input_amount); // Lo que gastamos para comprar USD Cash
+                vesSurplus = vesReceived - vesSpent;
+
+                // Acreditar VES Surplus a Wallet VES (ID 2)
+                if (vesSurplus > 0) {
+                    const [vesWallet] = await connection.query('SELECT balance FROM wallet WHERE id = 2');
+                    const currentVES = parseFloat(vesWallet[0].balance);
+                    const newVES = currentVES + vesSurplus;
+
+                    await connection.query('UPDATE wallet SET balance = ? WHERE id = 2', [newVES]);
+
+                    // Auditoría
+                    await connection.query(
+                        'INSERT INTO transactions (wallet_id, cycle_id, type, amount, description) VALUES (?, ?, "CYCLE_STEP", ?, ?)',
+                        [2, id, vesSurplus, `Ganancia VES del ciclo (${vesReceived} - ${vesSpent} = ${vesSurplus})`]
+                    );
+                }
+            }
+        }
+
+        // Insertar paso
+        await connection.query(
             `INSERT INTO cycle_steps 
-            (cycle_id, step_type, input_amount, output_amount, exchange_rate, fee, notes) 
-            VALUES (?, ?, ?, ?, ?, ?, ?)`,
-            [id, step_type, input_amount, output_amount, exchange_rate, fee || 0, notes]
+            (cycle_id, step_type, input_amount, output_amount, exchange_rate, fee, ves_surplus, debit_amount, notes) 
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            [id, step_type, input_amount, output_amount, exchange_rate, fee || 0, vesSurplus, debit_amount || null, notes]
         );
 
-        // Si es el último paso, podríamos actualizar el saldo provisionalmente, pero mejor esperar al cierre.
-
-        res.json({ success: true, message: 'Paso registrado' });
+        await connection.commit();
+        res.json({
+            success: true,
+            message: 'Paso registrado',
+            ves_surplus: vesSurplus
+        });
     } catch (error) {
+        await connection.rollback();
         res.status(500).json({ error: error.message });
+    } finally {
+        connection.release();
     }
 });
 

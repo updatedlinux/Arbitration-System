@@ -135,6 +135,10 @@
                 <button class="btn btn-primary" onclick="startCycle()">
                     <i class="fas fa-play"></i> Comenzar Arbitraje
                 </button>
+                <button id="startVesCycleBtn" class="btn btn-outline hidden" onclick="startVesCycle()"
+                    style="margin-top: 1rem;">
+                    <i class="fas fa-sync-alt"></i> Iniciar Ciclo VES
+                </button>
             </div>
 
             <!-- State: Active Cycle Wizard -->
@@ -232,24 +236,21 @@
                 <!-- Step 4: Send to Binance -->
                 <div id="step4" class="step-content hidden">
                     <h4>Paso 4: Envío a Binance</h4>
-                    <p class="mb-2 text-secondary">Envía los fondos de regreso a Binance.</p>
+                    <p class="mb-2 text-secondary">Envía los fondos de regreso a Binance. Kontigo cobra dos fees.</p>
                     <form onsubmit="handleStep(event, 'SEND_TO_BINANCE')">
                         <div class="grid-2">
                             <div class="form-group">
-                                <label>USDC Enviado desde Kontigo</label>
-                                <input type="number" step="0.01" name="input_amount" id="step4_input" required
-                                    oninput="calcStep4()">
+                                <label>Monto a Debitar en Kontigo</label>
+                                <input type="number" step="0.01" name="debit_amount" id="step4_debit" required
+                                    placeholder="Ej: 30.43">
                             </div>
                             <div class="form-group">
-                                <label>Comisión de Red (USDC)</label>
-                                <input type="number" step="0.01" name="fee" id="step4_fee" value="0" required
-                                    oninput="calcStep4()">
+                                <label>Monto a Recibir en Binance</label>
+                                <input type="number" step="0.01" name="output_amount" id="step4_output" required
+                                    placeholder="Ej: 29.49">
                             </div>
                         </div>
-                        <div class="form-group">
-                            <label>Total a Recibir en Binance</label>
-                            <input type="number" step="0.01" name="output_amount" id="step4_output" required>
-                        </div>
+                        <input type="hidden" name="input_amount" id="step4_input" value="0">
                         <button type="submit" class="btn btn-primary w-full">Confirmar Envío</button>
                     </form>
                 </div>

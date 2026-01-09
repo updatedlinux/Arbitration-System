@@ -30,13 +30,15 @@ CREATE TABLE IF NOT EXISTS users (
 -- Tabla de Ciclos de Arbitraje
 CREATE TABLE IF NOT EXISTS cycles (
     id INT PRIMARY KEY AUTO_INCREMENT,
+    cycle_type ENUM('MAIN', 'VES_TO_USD') DEFAULT 'MAIN',
     start_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     end_date TIMESTAMP NULL,
     status ENUM('OPEN', 'COMPLETED', 'CANCELLED') DEFAULT 'OPEN',
     initial_balance DECIMAL(20, 8),
+    initial_currency VARCHAR(10) DEFAULT 'USDT',
     final_balance DECIMAL(20, 8),
-    spread_amount DECIMAL(20, 8), -- Ganancia/Pérdida en USDT
-    spread_percentage DECIMAL(10, 4) -- Ganancia/Pérdida en %
+    spread_amount DECIMAL(20, 8),
+    spread_percentage DECIMAL(10, 4)
 );
 
 -- Tabla de Pasos del Ciclo
@@ -54,6 +56,8 @@ CREATE TABLE IF NOT EXISTS cycle_steps (
     output_amount DECIMAL(20, 8) NOT NULL,
     exchange_rate DECIMAL(20, 8) NULL,
     fee DECIMAL(20, 8) DEFAULT 0,
+    ves_surplus DECIMAL(20, 8) DEFAULT 0,
+    debit_amount DECIMAL(20, 8) NULL,
     notes TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (cycle_id) REFERENCES cycles(id) ON DELETE CASCADE
