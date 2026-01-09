@@ -501,11 +501,11 @@ async function showCycleDetails(cycleId) {
         const cycle = await res.json();
 
         const stepNames = {
-            'SELL_USDT_TO_VES': 'Venta USDT → VES',
+            'SELL_USDT_TO_VES': 'Venta USDT -> VES',
             'BUY_USD_CASH': 'Compra USD Efectivo',
-            'DEPOSIT_KONTIGO': 'Depósito Kontigo',
-            'SEND_TO_BINANCE': 'Envío a Binance',
-            'CONVERT_TO_USDT': 'Conversión a USDT'
+            'DEPOSIT_KONTIGO': 'Deposito Kontigo',
+            'SEND_TO_BINANCE': 'Envio a Binance',
+            'CONVERT_TO_USDT': 'Conversion a USDT'
         };
 
         let stepsHtml = '';
@@ -513,7 +513,7 @@ async function showCycleDetails(cycleId) {
             stepsHtml = cycle.steps.map((step, i) => `
                 <div style="padding: 0.5rem 0; border-bottom: 1px solid var(--border);">
                     <strong>${i + 1}. ${stepNames[step.step_type] || step.step_type}</strong><br>
-                    <small>Entrada: ${formatMoney(step.input_amount)} → Salida: ${formatMoney(step.output_amount)}</small>
+                    <small>Entrada: ${formatMoney(step.input_amount)} -> Salida: ${formatMoney(step.output_amount)}</small>
                     ${step.exchange_rate ? `<br><small>Tasa: ${step.exchange_rate}</small>` : ''}
                     ${step.ves_surplus > 0 ? `<br><small class="text-success">+${formatMoney(step.ves_surplus)} VES (Ganancia)</small>` : ''}
                 </div>
@@ -522,7 +522,7 @@ async function showCycleDetails(cycleId) {
             stepsHtml = '<p>No hay pasos registrados.</p>';
         }
 
-        const typeLabel = cycle.cycle_type === 'VES_TO_USD' ? 'VES → USD' : 'USDT → VES → USD → USDT';
+        const typeLabel = cycle.cycle_type === 'VES_TO_USD' ? 'VES -> USD' : 'USDT -> VES -> USD -> USDT';
         const spreadClass = cycle.spread_amount >= 0 ? 'text-success' : 'text-danger';
 
         const content = `
@@ -531,7 +531,7 @@ async function showCycleDetails(cycleId) {
                 <p><strong>Estado:</strong> ${cycle.status}</p>
                 <p><strong>Base:</strong> ${formatMoney(cycle.initial_balance)} ${cycle.initial_currency || 'USDT'}</p>
                 <p><strong>Final:</strong> ${cycle.final_balance ? formatMoney(cycle.final_balance) + ' USDT' : '-'}</p>
-                <p><strong>Spread:</strong> <span class="${spreadClass}">${cycle.spread_amount !== null ? formatMoney(cycle.spread_amount) + ' USDT (' + cycle.spread_percentage?.toFixed(2) + '%)' : '-'}</span></p>
+                <p><strong>Spread:</strong> <span class="${spreadClass}">${cycle.spread_amount !== null ? formatMoney(cycle.spread_amount) + ' USDT (' + parseFloat(cycle.spread_percentage || 0).toFixed(2) + '%)' : '-'}</span></p>
                 <hr style="border-color: var(--border); margin: 1rem 0;">
                 <h4>Pasos del Ciclo</h4>
                 ${stepsHtml}
