@@ -481,6 +481,73 @@ router.post('/:id/close', async (req, res) => {
 
 /**
  * @swagger
+ * /cycles/{id}/close-ves:
+ *   post:
+ *     summary: Cerrar ciclo VES y calcular resultados
+ *     tags: [Cycles]
+ */
+router.post('/:id/close-ves', async (req, res) => {
+    const { id } = req.params;
+    const { final_usdt } = req.body;
+    const connection = await pool.getConnection();
+
+    try {
+        await connection.beginTransaction();
+
+        // 1. Obtener info del ciclo
+        const [cycles] = await connection.query('SELECT * FROM cycles WHERE id = ?', [id]);
+        if (cycles.length === 0) throw new Error('Ciclo no encontrado');
+
+        const cycle = cycles[0];
+        const vesInitial = parseFloat(cycle.initial_balance);
+        const usdtFinal = parseFloat(final_usdt);
+
+        // 2. Para VES cycle, el spread se calcula como: USDT obtenido (es todo ganancia neta desde VES)
+        // No hay "perdida" porque los VES ya eran ganancia. El spread es simplemente cuanto USDT generamos.
+        const spreadAmount = usdtFinal; // Todo es ganancia
+        const spreadPercentage = 100; // 100% es ganancia pura (convertimos VES free a USDT)
+
+        // 3. Actualizar ciclo
+        await connection.query(
+            'UPDATE cycles SET status = "COMPLETED", end_date = NOW(), final_balance = ?, spread_amount = ?, spread_percentage = ? WHERE id = ?',
+            [usdtFinal, spreadAmount, spreadPercentage, id]
+        );
+
+        // 4. Añadir USDT a wallet
+        const [wallet] = await connection.query('SELECT balance FROM wallet WHERE id = 1');
+        const currentBalance = parseFloat(wallet[0].balance);
+        const newBalance = currentBalance + usdtFinal;
+
+        await connection.query('UPDATE wallet SET balance = ? WHERE id = 1', [newBalance]);
+
+        // 5. Auditoría
+        await connection.query(
+            'INSERT INTO transactions (wallet_id, cycle_id, type, amount, description) VALUES (?, ?, "CYCLE_CLOSE", ?, ?)',
+            [1, id, usdtFinal, `Cierre ciclo VES #${id}. VES inicial: ${vesInitial}, USDT generado: ${usdtFinal}`]
+        );
+
+        await connection.commit();
+        res.json({
+            success: true,
+            message: 'Ciclo VES cerrado correctamente',
+            results: {
+                vesInitial,
+                usdtFinal,
+                spreadAmount,
+                spreadPercentage
+            }
+        });
+
+    } catch (error) {
+        await connection.rollback();
+        res.status(400).json({ error: error.message });
+    } finally {
+        connection.release();
+    }
+});
+
+/**
+ * @swagger
  * /cycles:
  *   get:
  *     summary: Listar historial de ciclos

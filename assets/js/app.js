@@ -404,22 +404,39 @@ async function handleCloseCycle(e) {
 
 // --- UI Helpers ---
 
+let currentCycleType = 'MAIN'; // Track cycle type
+let vesAvailableBalance = 0;
+
 function showStartCycleUI() {
     document.getElementById('startCycleState').classList.remove('hidden');
     document.getElementById('activeCycleState').classList.add('hidden');
+    document.getElementById('activeVesCycleState').classList.add('hidden');
     currentCycleId = null;
     currentStep = 1;
+    currentCycleType = 'MAIN';
 }
 
 function showActiveCycleUI(cycle) {
     document.getElementById('startCycleState').classList.add('hidden');
-    document.getElementById('activeCycleState').classList.remove('hidden');
-    document.getElementById('cycleIdDisplay').innerText = `ID: #${cycle.id}`;
-    updateWizardUI();
+    currentCycleType = cycle.cycle_type || 'MAIN';
+
+    if (currentCycleType === 'VES_TO_USD') {
+        document.getElementById('activeCycleState').classList.add('hidden');
+        document.getElementById('activeVesCycleState').classList.remove('hidden');
+        document.getElementById('vesCycleIdDisplay').innerText = `ID: #${cycle.id}`;
+        vesAvailableBalance = parseFloat(cycle.initial_balance);
+        document.getElementById('vesAvailableDisplay').innerText = `VES Disponibles: ${formatMoney(vesAvailableBalance)}`;
+        updateVesWizardUI();
+    } else {
+        document.getElementById('activeVesCycleState').classList.add('hidden');
+        document.getElementById('activeCycleState').classList.remove('hidden');
+        document.getElementById('cycleIdDisplay').innerText = `ID: #${cycle.id}`;
+        updateWizardUI();
+    }
 }
 
 function updateWizardUI() {
-    document.querySelectorAll('.step-indicator').forEach(el => {
+    document.querySelectorAll('#activeCycleState .step-indicator').forEach(el => {
         const step = parseInt(el.dataset.step);
         el.classList.remove('active', 'completed');
         if (step < currentStep) el.classList.add('completed');
@@ -428,12 +445,125 @@ function updateWizardUI() {
 
     for (let i = 1; i <= 5; i++) {
         const div = document.getElementById(`step${i}`);
-        if (i === currentStep) div.classList.remove('hidden');
-        else div.classList.add('hidden');
+        if (div) {
+            if (i === currentStep) div.classList.remove('hidden');
+            else div.classList.add('hidden');
+        }
     }
 }
 
-// --- Calculators --- (Same as before)
+function updateVesWizardUI() {
+    document.querySelectorAll('#activeVesCycleState .step-indicator').forEach(el => {
+        const step = parseInt(el.dataset.step);
+        el.classList.remove('active', 'completed');
+        if (step < currentStep) el.classList.add('completed');
+        if (step === currentStep) el.classList.add('active');
+    });
+
+    for (let i = 1; i <= 4; i++) {
+        const div = document.getElementById(`ves_step${i}`);
+        if (div) {
+            if (i === currentStep) div.classList.remove('hidden');
+            else div.classList.add('hidden');
+        }
+    }
+}
+
+// VES Cycle Step Handler
+async function handleVesStep(e, stepType) {
+    e.preventDefault();
+    const form = e.target;
+    const formData = new FormData(form);
+    const body = {
+        step_type: stepType,
+        input_amount: parseFloat(formData.get('input_amount')),
+        output_amount: parseFloat(formData.get('output_amount')),
+        exchange_rate: parseFloat(formData.get('exchange_rate') || 0),
+        fee: parseFloat(formData.get('fee') || 0)
+    };
+
+    if (stepType === 'SEND_TO_BINANCE') {
+        body.debit_amount = parseFloat(formData.get('debit_amount') || 0);
+    }
+
+    try {
+        const res = await fetchWithAuth(`${API_BASE}/cycles/${currentCycleId}/step`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body)
+        });
+        const data = await res.json();
+
+        if (data.success) {
+            checkActiveCycle();
+            loadWallet();
+            form.reset();
+        } else {
+            showModal('Error', data.error);
+        }
+    } catch (err) {
+        showModal('Error', 'Error al registrar paso');
+    }
+}
+
+async function handleCloseVesCycle(e) {
+    e.preventDefault();
+    const form = e.target;
+    const formData = new FormData(form);
+
+    const stepBody = {
+        step_type: 'CONVERT_TO_USDT',
+        input_amount: parseFloat(formData.get('input_amount')),
+        output_amount: parseFloat(formData.get('output_amount')),
+        exchange_rate: 0,
+        fee: 0
+    };
+
+    try {
+        // 1. Register final step
+        await fetchWithAuth(`${API_BASE}/cycles/${currentCycleId}/step`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(stepBody)
+        });
+
+        // 2. Close cycle
+        const res = await fetchWithAuth(`${API_BASE}/cycles/${currentCycleId}/close-ves`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ final_usdt: parseFloat(formData.get('output_amount')) })
+        });
+        const data = await res.json();
+
+        if (data.success) {
+            showModal('Ciclo VES Cerrado', `Spread: ${formatMoney(data.results.spreadAmount)} USDT (${data.results.spreadPercentage.toFixed(2)}%)`);
+            showStartCycleUI();
+            loadWallet();
+            loadHistory();
+        } else {
+            showModal('Error', data.error);
+        }
+    } catch (err) {
+        showModal('Error', 'Error en el proceso final');
+    }
+}
+
+function calcVesStep1() {
+    const usdAmount = parseFloat(document.getElementById('ves_step1_output').value) || 0;
+    const rate = parseFloat(document.getElementById('ves_step1_rate').value) || 0;
+    const vesNeeded = usdAmount * rate;
+    document.getElementById('ves_step1_input').value = vesNeeded.toFixed(2);
+
+    // Visual warning if exceeds available
+    const inputEl = document.getElementById('ves_step1_input');
+    if (vesNeeded > vesAvailableBalance) {
+        inputEl.style.borderColor = 'var(--danger)';
+    } else {
+        inputEl.style.borderColor = '';
+    }
+}
+
+// --- Calculators ---
 function calcStep1() {
     const input = parseFloat(document.getElementById('step1_input').value) || 0;
     const rate = parseFloat(document.getElementById('step1_rate').value) || 0;
