@@ -1,5 +1,6 @@
 const express = require('express');
 const cors = require('cors');
+const path = require('path');
 const swaggerUi = require('swagger-ui-express');
 const swaggerSpecs = require('./config/swagger');
 require('dotenv').config();
@@ -19,7 +20,7 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
 // Archivos estáticos - Servir frontend en la raíz
-app.use(express.static('assets'));
+app.use(express.static(path.join(__dirname, '../assets')));
 
 // Documentación Swagger
 app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpecs));
@@ -29,12 +30,12 @@ app.use('/api/auth', authRoutes);
 app.use('/api/wallet', verifyToken, walletRoutes);
 app.use('/api/cycles', verifyToken, cyclesRoutes);
 
-// Redirigir cualquier otra ruta no API al frontend (SPA capability, aunque es simple HTML aquí)
+// Redirigir cualquier otra ruta no API al frontend (SPA capability)
 app.get('*', (req, res) => {
     if (req.path.startsWith('/api')) {
         res.status(404).json({ error: 'Endpoint no encontrado' });
     } else {
-        res.sendFile(__dirname + '/../assets/index.html');
+        res.sendFile(path.resolve(__dirname, '../assets/index.html'));
     }
 });
 
