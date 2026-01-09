@@ -32,11 +32,15 @@ app.use('/api/wallet', verifyToken, walletRoutes);
 app.use('/api/cycles', verifyToken, cyclesRoutes);
 app.use('/api/reports', verifyToken, reportsRoutes);
 
-// Redirigir cualquier otra ruta no API al frontend (SPA capability)
-app.get('*', (req, res) => {
+// Redirigir rutas SPA que no sean archivos estáticos
+app.get('*', (req, res, next) => {
     if (req.path.startsWith('/api')) {
         res.status(404).json({ error: 'Endpoint no encontrado' });
+    } else if (req.path.includes('.')) {
+        // If has extension (like .html, .js), let it 404 naturally
+        next();
     } else {
+        // SPA fallback for routes without extensions
         res.sendFile(path.resolve(__dirname, '../assets/index.html'));
     }
 });

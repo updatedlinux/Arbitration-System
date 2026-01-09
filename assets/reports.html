@@ -203,10 +203,18 @@
             const token = getToken();
             if (!token) {
                 window.location.href = '/';
-                return;
+                return null;
             }
             options.headers = { ...options.headers, 'Authorization': `Bearer ${token}` };
-            return fetch(url, options);
+            const res = await fetch(url, options);
+
+            if (res.status === 401) {
+                localStorage.removeItem('token');
+                window.location.href = '/';
+                return null;
+            }
+
+            return res;
         }
 
         function logout() {
@@ -244,6 +252,8 @@
 
             try {
                 const res = await fetchWithAuth(`${API_BASE}/reports/daily?date=${date}`);
+                if (!res) return; // Redirected
+
                 const data = await res.json();
 
                 if (!data.hasData) {
