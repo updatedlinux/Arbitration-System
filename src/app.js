@@ -5,8 +5,10 @@ const swaggerSpecs = require('./config/swagger');
 require('dotenv').config();
 
 // Importar rutas
+const authRoutes = require('./routes/auth');
 const walletRoutes = require('./routes/wallet');
 const cyclesRoutes = require('./routes/cycles');
+const verifyToken = require('./middleware/auth');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -23,8 +25,9 @@ app.use(express.static('assets'));
 app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpecs));
 
 // Rutas API
-app.use('/api/wallet', walletRoutes);
-app.use('/api/cycles', cyclesRoutes);
+app.use('/api/auth', authRoutes);
+app.use('/api/wallet', verifyToken, walletRoutes);
+app.use('/api/cycles', verifyToken, cyclesRoutes);
 
 // Redirigir cualquier otra ruta no API al frontend (SPA capability, aunque es simple HTML aquí)
 app.get('*', (req, res) => {

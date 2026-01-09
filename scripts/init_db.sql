@@ -13,6 +13,15 @@ CREATE TABLE IF NOT EXISTS wallet (
 -- Inicializar billetera si está vacía
 INSERT IGNORE INTO wallet (id, currency, balance) VALUES (1, 'USDT', 0.00000000);
 
+-- Tabla de Usuarios
+CREATE TABLE IF NOT EXISTS users (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    username VARCHAR(50) NOT NULL UNIQUE,
+    password_hash VARCHAR(255) NOT NULL,
+    role ENUM('ADMIN', 'USER') DEFAULT 'ADMIN',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
 -- Tabla de Ciclos de Arbitraje
 CREATE TABLE IF NOT EXISTS cycles (
     id INT PRIMARY KEY AUTO_INCREMENT,

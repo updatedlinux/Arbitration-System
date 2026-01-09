@@ -239,7 +239,8 @@ table {
     border-collapse: collapse;
 }
 
-th, td {
+th,
+td {
     padding: 1rem;
     text-align: left;
     border-bottom: 1px solid rgba(255, 255, 255, 0.05);
@@ -271,16 +272,42 @@ tr:hover {
     color: var(--success);
 }
 
-.text-success { color: var(--success); }
-.text-danger { color: var(--danger); }
+.text-success {
+    color: var(--success);
+}
+
+.text-danger {
+    color: var(--danger);
+}
 
 /* Utilities */
-.hidden { display: none !important; }
-.flex-between { display: flex; justify-content: space-between; align-items: center; }
-.mt-4 { margin-top: 1.5rem; }
-.mb-2 { margin-bottom: 0.75rem; }
-.w-full { width: 100%; }
-.grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+.hidden {
+    display: none !important;
+}
+
+.flex-between {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.mt-4 {
+    margin-top: 1.5rem;
+}
+
+.mb-2 {
+    margin-bottom: 0.75rem;
+}
+
+.w-full {
+    width: 100%;
+}
+
+.grid-2 {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1rem;
+}
 
 /* Responsive */
 @media (max-width: 768px) {
@@ -288,5 +315,87 @@ tr:hover {
         overflow-x: auto;
         padding-bottom: 1rem;
     }
-    .grid-2 { grid-template-columns: 1fr; }
-}
+
+    /* Login Styles */
+    .login-container {
+        min-height: 100vh;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        background: var(--bg-dark);
+    }
+
+    .login-box {
+        background: var(--bg-card);
+        padding: 2.5rem;
+        border-radius: 20px;
+        width: 100%;
+        max-width: 400px;
+        box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+    }
+
+    .login-box h2 {
+        text-align: center;
+        margin-bottom: 2rem;
+        color: var(--primary);
+    }
+
+    /* Modal Styles */
+    .modal-overlay {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(0, 0, 0, 0.8);
+        backdrop-filter: blur(5px);
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        z-index: 1000;
+    }
+
+    .modal-box {
+        background: var(--bg-card);
+        padding: 2rem;
+        border-radius: 16px;
+        width: 90%;
+        max-width: 500px;
+        box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        animation: modalSlideIn 0.3s ease;
+    }
+
+    .modal-box h3 {
+        color: var(--primary);
+        font-size: 1.5rem;
+        margin-bottom: 1rem;
+    }
+
+    .modal-box p {
+        color: var(--text-primary);
+        margin-bottom: 2rem;
+    }
+
+    .modal-actions {
+        display: flex;
+        justify-content: flex-end;
+        gap: 1rem;
+    }
+
+    @keyframes modalSlideIn {
+        from {
+            transform: translateY(20px);
+            opacity: 0;
+        }
+
+        to {
+            transform: translateY(0);
+            opacity: 1;
+        }
+    }
+
+    .text-center {
+        text-align: center;
+    }

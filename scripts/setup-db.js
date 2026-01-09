@@ -23,6 +23,17 @@ async function setupDatabase() {
         console.log('Ejecutando script de base de datos...');
         await connection.query(sql);
 
+        // Seed Admin User if not exists
+        const [users] = await connection.query('SELECT * FROM users WHERE username = "admin"');
+        if (users.length === 0) {
+            console.log('Creando usuario admin por defecto...');
+            // Password: admin123
+            const bcrypt = require('bcryptjs');
+            const hash = await bcrypt.hash('admin123', 10);
+            await connection.query('INSERT INTO users (username, password_hash) VALUES (?, ?)', ['admin', hash]);
+            console.log('✅ Usuario "admin" creado (Pass: admin123)');
+        }
+
         console.log('✅ Base de datos "arbitraje_db" inicializada correctamente.');
         await connection.end();
     } catch (error) {
