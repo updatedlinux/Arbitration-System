@@ -56,31 +56,59 @@ router.post('/start', async (req, res) => {
             throw new Error('Ya existe un ciclo activo. Debe cerrarlo antes de iniciar otro.');
         }
 
-        // 2. Obtener saldo actual de wallet para fijarlo como inicial
-        const [wallet] = await connection.query('SELECT balance FROM wallet WHERE id = 1');
-        const initialBalance = wallet[0].balance;
-
-        if (initialBalance <= 0) {
-            throw new Error('El saldo de la billetera debe ser mayor a 0 para iniciar un ciclo.');
+        // 2. REGLA: Verificar saldo en Kontigo (ID 4)
+        const [kontigoWallet] = await connection.query('SELECT balance FROM wallet WHERE id = 4');
+        const kontigoBalance = parseFloat(kontigoWallet[0].balance);
+        if (kontigoBalance > 0) {
+            throw new Error(`Tienes ${kontigoBalance} USDC en Kontigo. Debes moverlos a Binance antes de iniciar un nuevo ciclo.`);
         }
 
-        // 3. Crear ciclo
+        // 3. Obtener saldo actual de wallet (USDT ID 1) para fijarlo como inicial/usarlo
+        const [wallet] = await connection.query('SELECT balance FROM wallet WHERE id = 1');
+        const usdtBalance = parseFloat(wallet[0].balance);
+
+        // REGLA: Si hay Efectivo (ID 3), se permite iniciar SIEMPRE QUE haya USDT en la base.
+        // Si usdtBalance <= 0, no se puede iniciar nueva vuelta (cycle).
+        if (usdtBalance <= 0) {
+            throw new Error('El saldo de la billetera USDT debe ser mayor a 0 para iniciar un ciclo.');
+        }
+
+        const initialBalance = usdtBalance;
+
+        // 4. Crear ciclo
         const [result] = await connection.query(
             'INSERT INTO cycles (initial_balance, status) VALUES (?, "OPEN")',
             [initialBalance]
+        );
+        const cycleId = result.insertId;
+
+        // 5. Registrar Transacción (Auditoría) - Débito Virtual o Log de Inicio
+        // Nota: En este sistema "Referencial", el saldo de wallet suele mantenerse "estático" como referencia 
+        // o se "congela". Según la lógica anterior, NO descontábamos el saldo de la wallet al iniciar, solo copiábamos.
+        // PERO el usuario pidió "Auditoría de TODAS las transacciones".
+        // Si queremos simular que el dinero "entra" al ciclo, deberíamos descontarlo de la wallet?
+        // El prompt anterior decía: "Congela saldo actual como initial_balance". 
+        // Vamos a mantener la lógica de "foto" pero registrando evento.
+        // SI el usuario quiere que se descuente, debería haberlo especificado. 
+        // Asumiremos que el dinero se "bloquea" en el ciclo.
+        // UPDATE: Para "auditoría de transacciones", vamos a registrar el evento CYCLE_START.
+
+        await connection.query(
+            'INSERT INTO transactions (wallet_id, cycle_id, type, amount, description) VALUES (?, ?, "CYCLE_START", ?, ?)',
+            [1, cycleId, 0, `Inicio de ciclo #${cycleId} con base ${initialBalance} USDT`]
         );
 
         await connection.commit();
         res.status(201).json({
             success: true,
             message: 'Ciclo iniciado',
-            cycleId: result.insertId,
+            cycleId,
             initialBalance
         });
 
     } catch (error) {
         await connection.rollback();
-        res.status(400).json({ error: error.message });
+        res.status(400).json({ error: error.message }); // 400 Bad Request
     } finally {
         connection.release();
     }
@@ -129,6 +157,102 @@ router.post('/:id/step', async (req, res) => {
 
 /**
  * @swagger
+ * /cycles/{id}/cancel:
+ *   post:
+ *     summary: Cancelar ciclo forzosamente y acreditar activos pendientes
+ *     tags: [Cycles]
+ */
+router.post('/:id/cancel', async (req, res) => {
+    const { id } = req.params;
+    const connection = await pool.getConnection();
+
+    try {
+        await connection.beginTransaction();
+
+        // 1. Obtener ciclo y saldo inicial
+        const [cycleRows] = await connection.query('SELECT * FROM cycles WHERE id = ?', [id]);
+        if (cycleRows.length === 0) throw new Error('Ciclo no encontrado');
+        const cycle = cycleRows[0];
+
+        if (cycle.status !== 'OPEN') throw new Error('El ciclo no está activo');
+
+        // 2. Obtener pasos realizados
+        const [steps] = await connection.query('SELECT * FROM cycle_steps WHERE cycle_id = ? ORDER BY id ASC', [id]);
+        const lastStep = steps.length > 0 ? steps[steps.length - 1] : null;
+
+        let refundWalletId = 1; // Default USDT
+        let refundAmount = parseFloat(cycle.initial_balance);
+        let refundCurrency = 'USDT';
+
+        // Lógica de Devolución basada en último paso
+        if (!lastStep) {
+            // No se hizo nada, devolver USDT inicial
+            refundWalletId = 1;
+            refundAmount = parseFloat(cycle.initial_balance);
+        } else {
+            // Dependiendo del paso, el dinero está en diferentes estados
+            switch (lastStep.step_type) {
+                case 'SELL_USDT_TO_VES': // Tengo VES
+                    refundWalletId = 2; // VES
+                    refundAmount = parseFloat(lastStep.output_amount);
+                    refundCurrency = 'VES';
+                    break;
+                case 'BUY_USD_CASH': // Tengo Efectivo
+                    refundWalletId = 3; // USD_CASH
+                    refundAmount = parseFloat(lastStep.output_amount);
+                    refundCurrency = 'USD_CASH';
+                    break;
+                case 'DEPOSIT_KONTIGO': // Tengo USDC en Kontigo
+                    refundWalletId = 4; // USDC_KONTIGO
+                    refundAmount = parseFloat(lastStep.output_amount);
+                    refundCurrency = 'USDC_KONTIGO';
+                    break;
+                case 'SEND_TO_BINANCE': // Tengo USDC en Binance
+                    refundWalletId = 5; // USDC_BINANCE
+                    refundAmount = parseFloat(lastStep.output_amount);
+                    refundCurrency = 'USDC_BINANCE';
+                    break;
+                case 'CONVERT_TO_USDT': // Ciclo completo, usar endpoint de cierre
+                    throw new Error('El ciclo ya está completo. Use /close.');
+            }
+        }
+
+        // 3. Actualizar Wallet Correspondiente
+        // Primero obtener saldo actual de esa wallet
+        const [targetWallet] = await connection.query('SELECT balance FROM wallet WHERE id = ?', [refundWalletId]);
+        const currentBalance = parseFloat(targetWallet[0].balance || 0);
+        const newBalance = currentBalance + refundAmount;
+
+        await connection.query('UPDATE wallet SET balance = ? WHERE id = ?', [newBalance, refundWalletId]);
+
+        // 4. Marcar Ciclo como Cancelado
+        await connection.query(
+            'UPDATE cycles SET status = "CANCELLED", end_date = NOW(), final_balance = ?, spread_amount = 0, spread_percentage = 0 WHERE id = ?',
+            [refundAmount, id]
+        );
+
+        // 5. Auditoría
+        await connection.query(
+            'INSERT INTO transactions (wallet_id, cycle_id, type, amount, description) VALUES (?, ?, "CYCLE_CANCEL", ?, ?)',
+            [refundWalletId, id, refundAmount, `Ciclo cancelado. Crédito a ${refundCurrency}.`]
+        );
+
+        await connection.commit();
+        res.json({
+            success: true,
+            message: `Ciclo cancelado. Se acreditaron ${refundAmount} ${refundCurrency} a la billetera.`
+        });
+
+    } catch (error) {
+        await connection.rollback();
+        res.status(400).json({ error: error.message });
+    } finally {
+        connection.release();
+    }
+});
+
+/**
+ * @swagger
  * /cycles/{id}/close:
  *   post:
  *     summary: Cerrar ciclo y calcular resultados
@@ -169,6 +293,12 @@ router.post('/:id/close', async (req, res) => {
 
         // 4. Actualizar Billetera Principal
         await connection.query('UPDATE wallet SET balance = ? WHERE id = 1', [finalBalance]);
+
+        // 5. Auditoría
+        await connection.query(
+            'INSERT INTO transactions (wallet_id, cycle_id, type, amount, description) VALUES (?, ?, "CYCLE_CLOSE", ?, ?)',
+            [1, id, spreadAmount, `Cierre de ciclo. Balance final: ${finalBalance}`]
+        );
 
         await connection.commit();
         res.json({

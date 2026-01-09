@@ -124,47 +124,107 @@ function closeModal() {
     document.getElementById('modalContainer').classList.add('hidden');
 }
 
+function showInputModal(title, message, callback) {
+    document.getElementById('inputModalTitle').innerText = title;
+    document.getElementById('inputModalMessage').innerText = message;
+    const input = document.getElementById('inputModalValue');
+    input.value = '';
+
+    document.getElementById('inputModalConfirmBtn').onclick = () => {
+        const value = input.value;
+        if (value) {
+            closeInputModal();
+            callback(value);
+        }
+    };
+
+    document.getElementById('inputModalContainer').classList.remove('hidden');
+    input.focus();
+}
+
+function closeInputModal() {
+    document.getElementById('inputModalContainer').classList.add('hidden');
+}
+
 // --- Wallet Functions ---
 
 async function loadWallet() {
     try {
         const res = await fetchWithAuth(`${API_BASE}/wallet`);
-        const data = await res.json();
-        document.getElementById('walletBalance').innerText = `${formatMoney(data.balance)} USDT`;
+        const wallets = await res.json();
+
+        // Main USDT Wallet (ID 1)
+        const usdtWallet = wallets.find(w => w.id === 1);
+        if (usdtWallet) {
+            document.getElementById('walletBalance').innerText = `${formatMoney(usdtWallet.balance)} USDT`;
+        }
+
+        // Secondary Wallets
+        const secondaryContainer = document.getElementById('secondaryWalletsContainer');
+        const secondaryGrid = document.getElementById('secondaryWalletsGrid');
+        secondaryGrid.innerHTML = '';
+
+        const secondaryWallets = wallets.filter(w => w.id !== 1 && parseFloat(w.balance) > 0);
+
+        if (secondaryWallets.length > 0) {
+            secondaryContainer.classList.remove('hidden');
+            secondaryWallets.forEach(w => {
+                const div = document.createElement('div');
+                div.innerHTML = `
+                    <div class="stat-value" style="font-size: 1.2rem;">${formatMoney(w.balance)}</div>
+                    <div class="stat-label">${w.currency}</div>
+                 `;
+                secondaryGrid.appendChild(div);
+            });
+        } else {
+            secondaryContainer.classList.add('hidden');
+        }
+
     } catch (err) {
         console.error('Error loading wallet:', err);
     }
 }
 
 async function editWallet() {
-    // Custom prompt logic required for input, using simple prompt for now for simplicity in MVP, 
-    // or could upgrade to modal input. Let's stick to prompt for this specific inputs but wrapped safely?
-    // Actually user asked for NO popups. So let's make a custom input modal or simpler: 
-    // Just use a prompt for now as it wasn't explicitly forbidden to use prompt(), only "alerts/popups" usually refers to alert().
-    // user said "TODOS los popups por modales". Prompt IS a popup. 
-    // I should create an input modal but to save complexity I will use a simple implementation for now.
-
-    // Better implementation:
-    const newBalance = prompt('Ingrese el nuevo saldo real de la billetera (USDT):');
-    // I will use prompt because implementing a full input modal requires more HTML changes. 
-    // If strict compliance is needed, I'd need to add an input modal HTML.
-    // Let's assume prompt is acceptable for this Edge Case admin action, or better, use showModal with logic (complex).
-
-    if (newBalance && !isNaN(newBalance)) {
-        try {
-            await fetchWithAuth(`${API_BASE}/wallet`, {
-                method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ balance: parseFloat(newBalance) })
-            });
-            loadWallet();
-        } catch (err) {
-            showModal('Error', 'Error al actualizar saldo');
+    showInputModal('Actualizar Saldo', 'Ingrese el nuevo saldo real de la billetera (USDT):', async (newBalance) => {
+        if (newBalance && !isNaN(newBalance)) {
+            try {
+                await fetchWithAuth(`${API_BASE}/wallet`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ balance: parseFloat(newBalance) })
+                });
+                loadWallet();
+            } catch (err) {
+                showModal('Error', 'Error al actualizar saldo');
+            }
+        } else {
+            showModal('Error', 'Por favor ingrese un número válido');
         }
-    }
+    });
 }
 
 // --- Cycle Management ---
+
+async function cancelCycle() {
+    showConfirm('Finalizar Ciclo Manualmente', 'ADVERTENCIA: ¿Estás seguro de finalizar este ciclo? \n\nEl sistema detectará el último paso realizado y acreditará los fondos en la billetera correspondiente (Ej: VES, Efectivo, Kontigo...).', async () => {
+        try {
+            const res = await fetchWithAuth(`${API_BASE}/cycles/${currentCycleId}/cancel`, { method: 'POST' });
+            const data = await res.json();
+
+            if (data.success) {
+                showModal('Ciclo Finalizado', data.message);
+                showStartCycleUI();
+                loadWallet();
+                loadHistory();
+            } else {
+                showModal('Error', data.error);
+            }
+        } catch (err) {
+            showModal('Error', 'Error al cancelar el ciclo');
+        }
+    });
+}
 
 async function checkActiveCycle() {
     try {

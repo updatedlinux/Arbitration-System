@@ -13,21 +13,28 @@ const pool = require('../config/database');
  * @swagger
  * /wallet:
  *   get:
- *     summary: Obtener saldo actual de la billetera
+ *     summary: Obtener saldo de las billeteras
  *     tags: [Wallet]
  *     responses:
  *       200:
- *         description: Saldo actual
+ *         description: Lista de saldos
  *         content:
  *           application/json:
  *             schema:
- *               type: object
- *               properties:
- *                 balance:
- *                   type: number
- *                   format: float
- *                 updated_at:
- *                   type: string
+ *               type: array
+ *               items:
+ *                 type: object
+ *                 properties:
+ *                   id:
+ *                     type: integer
+ *                   currency:
+ *                     type: string
+ *                   balance:
+ *                     type: number
+ *                     format: float
+ *                   updated_at:
+ *                     type: string
+ *                     format: date-time
  */
 router.get('/', async (req, res) => {
     try {
@@ -65,15 +72,35 @@ router.get('/', async (req, res) => {
  */
 router.put('/', async (req, res) => {
     const { balance } = req.body;
-    if (balance === undefined || isNaN(balance)) {
-        return res.status(400).json({ error: 'Se requiere un monto válido' });
-    }
+    const connection = await pool.getConnection();
 
     try {
-        await pool.query('UPDATE wallet SET balance = ? WHERE id = 1', [balance]);
-        res.json({ success: true, message: 'Saldo actualizado', balance });
+        await connection.beginTransaction();
+
+        // Obtener saldo anterior para el log
+        const [rows] = await connection.query('SELECT balance FROM wallet WHERE id = 1');
+        const oldBalance = parseFloat(rows[0].balance);
+        const newBalance = parseFloat(balance);
+        const difference = newBalance - oldBalance;
+
+        // Actualizar wallet
+        await connection.query('UPDATE wallet SET balance = ?, updated_at = NOW() WHERE id = 1', [newBalance]);
+
+        // Registrar Transacción (Auditoría)
+        if (difference !== 0) {
+            await connection.query(
+                'INSERT INTO transactions (wallet_id, type, amount, description) VALUES (?, "MANUAL_ADJUSTMENT", ?, ?)',
+                [1, difference, `Ajuste manual de saldo: ${oldBalance} -> ${newBalance}`]
+            );
+        }
+
+        await connection.commit();
+        res.json({ success: true, balance: newBalance });
     } catch (error) {
+        await connection.rollback();
         res.status(500).json({ error: error.message });
+    } finally {
+        connection.release();
     }
 });
 

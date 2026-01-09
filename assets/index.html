@@ -3,9 +3,11 @@
 
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="theme-color" content="#FF6B35">
     <title>Daily Arbitrage System</title>
-
+    <link rel="manifest" href="manifest.json">
+    <link rel="icon" type="image/png" href="favicon.png">
     <!-- Fonts & Icons -->
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
@@ -23,6 +25,21 @@
             <p id="modalMessage">Mensaje...</p>
             <div class="modal-actions" id="modalActions">
                 <button class="btn btn-primary">Aceptar</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Input Modal Container -->
+    <div id="inputModalContainer" class="modal-overlay hidden">
+        <div class="modal-box">
+            <h3 id="inputModalTitle">Título</h3>
+            <p id="inputModalMessage">Mensaje...</p>
+            <div class="form-group">
+                <input type="text" id="inputModalValue" class="w-full" placeholder="Ingrese valor...">
+            </div>
+            <div class="modal-actions">
+                <button class="btn btn-outline" onclick="closeInputModal()">Cancelar</button>
+                <button class="btn btn-primary" id="inputModalConfirmBtn">Aceptar</button>
             </div>
         </div>
     </div>
@@ -67,24 +84,42 @@
         <!-- Top Stats Row -->
         <section class="stats-grid">
             <div class="card">
-                <div class="card-title">
-                    <i class="fas fa-wallet"></i> Wallet Base
-                </div>
-                <div class="flex-between">
-                    <h2 id="walletBalance" class="stat-value">0.00 USDT</h2>
-                    <button class="btn btn-outline" onclick="editWallet()">
+                <div class="card-header">
+                    <div class="card-title">
+                        <i class="fas fa-wallet" style="color: var(--warning);"></i>
+                        Billetera USDT
+                    </div>
+                    <button class="btn btn-outline" onclick="editWallet()"
+                        style="font-size: 0.8rem; padding: 0.25rem 0.5rem;">
                         <i class="fas fa-edit"></i>
                     </button>
                 </div>
-                <span class="stat-label">Saldo disponible para arbitraje</span>
+                <div class="stat-value" id="walletBalance">-- USDT</div>
+                <div class="stat-label">Saldo Disponible</div>
             </div>
 
             <div class="card">
-                <div class="card-title">
-                    <i class="fas fa-trophy"></i> Último Spread
+                <div class="card-header">
+                    <div class="card-title">
+                        <i class="fas fa-chart-pie" style="color: var(--primary);"></i>
+                        Último Spread
+                    </div>
                 </div>
-                <h2 id="lastSpread" class="stat-value">0.00%</h2>
-                <span id="lastSpreadAmount" class="stat-label text-success">+0.00 USDT</span>
+                <div class="stat-value" id="lastSpread">--%</div>
+                <div class="stat-label" id="lastSpreadAmount">-- USDT</div>
+            </div>
+
+            <!-- Secondary Wallets Container (Dynamic) -->
+            <div id="secondaryWalletsContainer" class="card hidden" style="grid-column: span 2;">
+                <div class="card-header">
+                    <div class="card-title">
+                        <i class="fas fa-coins" style="color: var(--text-secondary);"></i>
+                        Activos Pendientes
+                    </div>
+                </div>
+                <div class="grid-2" id="secondaryWalletsGrid">
+                    <!-- Injected by JS -->
+                </div>
             </div>
         </section>
 
@@ -105,10 +140,16 @@
             <!-- State: Active Cycle Wizard -->
             <div id="activeCycleState" class="hidden">
                 <div class="card-header">
-                    <h3><i class="fas fa-circle-notch fa-spin"></i> Ciclo en Progreso</h3>
-                    <span class="status-badge status-open" id="cycleIdDisplay">ID: #0</span>
+                    <div class="card-title">
+                        <span class="status-badge status-open">Ciclo Activo</span>
+                        <span id="cycleIdDisplay" style="font-size: 0.9rem; color: var(--text-secondary);">ID:
+                            #--</span>
+                    </div>
+                    <button class="btn btn-outline text-danger" onclick="cancelCycle()"
+                        style="border-color: var(--danger); color: var(--danger);">
+                        <i class="fas fa-ban"></i> Finalizar Manualmente
+                    </button>
                 </div>
-
                 <!-- Wizard Steps Indicator -->
                 <div class="wizard-steps">
                     <div class="step-indicator active" data-step="1">1</div>

@@ -11,7 +11,12 @@ CREATE TABLE IF NOT EXISTS wallet (
 );
 
 -- Inicializar billetera si está vacía
-INSERT IGNORE INTO wallet (id, currency, balance) VALUES (1, 'USDT', 0.00000000);
+INSERT IGNORE INTO wallet (id, currency, balance) VALUES 
+(1, 'USDT', 0.00000000),
+(2, 'VES', 0.00000000),
+(3, 'USD_CASH', 0.00000000),
+(4, 'USDC_KONTIGO', 0.00000000),
+(5, 'USDC_BINANCE', 0.00000000);
 
 -- Tabla de Usuarios
 CREATE TABLE IF NOT EXISTS users (
@@ -27,11 +32,11 @@ CREATE TABLE IF NOT EXISTS cycles (
     id INT PRIMARY KEY AUTO_INCREMENT,
     start_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     end_date TIMESTAMP NULL,
-    status ENUM('OPEN', 'COMPLETED') DEFAULT 'OPEN',
-    initial_balance DECIMAL(20, 8) NOT NULL,
-    final_balance DECIMAL(20, 8) NULL,
-    spread_amount DECIMAL(20, 8) NULL, -- Ganancia/Pérdida en USDT
-    spread_percentage DECIMAL(10, 4) NULL -- Ganancia/Pérdida en %
+    status ENUM('OPEN', 'COMPLETED', 'CANCELLED') DEFAULT 'OPEN',
+    initial_balance DECIMAL(20, 8),
+    final_balance DECIMAL(20, 8),
+    spread_amount DECIMAL(20, 8), -- Ganancia/Pérdida en USDT
+    spread_percentage DECIMAL(10, 4) -- Ganancia/Pérdida en %
 );
 
 -- Tabla de Pasos del Ciclo
@@ -51,5 +56,18 @@ CREATE TABLE IF NOT EXISTS cycle_steps (
     fee DECIMAL(20, 8) DEFAULT 0,
     notes TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (cycle_id) REFERENCES cycles(id) ON DELETE CASCADE
+);
+
+-- Tabla de Transacciones (Auditoría)
+CREATE TABLE IF NOT EXISTS transactions (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    wallet_id INT NOT NULL,
+    cycle_id INT NULL,
+    type ENUM('DEPOSIT', 'WITHDRAWAL', 'MANUAL_ADJUSTMENT', 'CYCLE_START', 'CYCLE_STEP', 'CYCLE_CANCEL', 'CYCLE_CLOSE') NOT NULL,
+    amount DECIMAL(20, 8) NOT NULL,
+    description TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (wallet_id) REFERENCES wallet(id),
     FOREIGN KEY (cycle_id) REFERENCES cycles(id) ON DELETE CASCADE
 );
