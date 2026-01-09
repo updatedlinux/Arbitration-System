@@ -38,13 +38,8 @@ const pool = require('../config/database');
  */
 router.get('/', async (req, res) => {
     try {
-        const [rows] = await pool.query('SELECT * FROM wallet WHERE id = 1');
-        if (rows.length === 0) {
-            // Inicializar si no existe por seguridad
-            await pool.query("INSERT INTO wallet (id, currency, balance) VALUES (1, 'USDT', 0)");
-            return res.json({ balance: 0, updated_at: new Date() });
-        }
-        res.json(rows[0]);
+        const [rows] = await pool.query('SELECT * FROM wallet ORDER BY id ASC');
+        res.json(rows);
     } catch (error) {
         res.status(500).json({ error: error.message });
     }
