@@ -256,7 +256,7 @@ async function checkActiveCycle() {
                 const nextInputMap = {
                     1: 'step2_input',
                     2: 'step3_input',
-                    3: 'step4_input',
+                    3: 'step4_debit',
                     4: 'step5_input'
                 };
 
@@ -266,7 +266,7 @@ async function checkActiveCycle() {
                     if (inputEl) {
                         inputEl.value = lastStep.output_amount;
                         if (inputId === 'step2_input') calcStep2();
-                        if (inputId === 'step4_input') calcStep4();
+                        // No auto-calc for step4 since debit/receive are separate inputs
                     }
                 }
             }
@@ -448,11 +448,7 @@ function calcStep2() {
     }
 }
 
-function calcStep4() {
-    const input = parseFloat(document.getElementById('step4_input').value) || 0;
-    const fee = parseFloat(document.getElementById('step4_fee').value) || 0;
-    document.getElementById('step4_output').value = (input - fee).toFixed(2);
-}
+// calcStep4 removed - Step 4 now uses manual debit/receive inputs
 
 // --- History ---
 
