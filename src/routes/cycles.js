@@ -37,6 +37,41 @@ router.get('/active', async (req, res) => {
 
 /**
  * @swagger
+ * /cycles/{id}:
+ *   get:
+ *     summary: Obtener detalles de un ciclo específico con todos sus pasos
+ *     tags: [Cycles]
+ */
+router.get('/:id', async (req, res) => {
+    const { id } = req.params;
+
+    // Evitar conflicto con otras rutas como /active
+    if (isNaN(id)) {
+        return res.status(400).json({ error: 'ID de ciclo inválido' });
+    }
+
+    try {
+        const [cycles] = await pool.query('SELECT * FROM cycles WHERE id = ?', [id]);
+
+        if (cycles.length === 0) {
+            return res.status(404).json({ error: 'Ciclo no encontrado' });
+        }
+
+        const cycle = cycles[0];
+        const [steps] = await pool.query('SELECT * FROM cycle_steps WHERE cycle_id = ? ORDER BY id ASC', [id]);
+        const [transactions] = await pool.query('SELECT * FROM transactions WHERE cycle_id = ? ORDER BY id ASC', [id]);
+
+        cycle.steps = steps;
+        cycle.transactions = transactions;
+
+        res.json(cycle);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+/**
+ * @swagger
  * /cycles/start-ves:
  *   post:
  *     summary: Iniciar un ciclo VES->USD (usando saldo de VES acumulado)
@@ -101,7 +136,7 @@ router.post('/start-ves', async (req, res) => {
  * @swagger
  * /cycles/start:
  *   post:
- *     summary: Iniciar un nuevo ciclo de arbitraje
+ *     summary: Iniciar un nuevo ciclo de arbitraje (Tipo MAIN)
  *     tags: [Cycles]
  *     responses:
  *       201:
@@ -125,52 +160,37 @@ router.post('/start', async (req, res) => {
             throw new Error(`Tienes ${kontigoBalance} USDC en Kontigo. Debes moverlos a Binance antes de iniciar un nuevo ciclo.`);
         }
 
-        // 3. Obtener saldo actual de wallet (USDT ID 1) para fijarlo como inicial/usarlo
+        // 3. Verificar que hay USDT disponible
         const [wallet] = await connection.query('SELECT balance FROM wallet WHERE id = 1');
         const usdtBalance = parseFloat(wallet[0].balance);
 
-        // REGLA: Si hay Efectivo (ID 3), se permite iniciar SIEMPRE QUE haya USDT en la base.
-        // Si usdtBalance <= 0, no se puede iniciar nueva vuelta (cycle).
         if (usdtBalance <= 0) {
             throw new Error('El saldo de la billetera USDT debe ser mayor a 0 para iniciar un ciclo.');
         }
 
-        const initialBalance = usdtBalance;
-
-        // 4. Crear ciclo
+        // 4. Crear ciclo (initial_balance se actualizará cuando se registre Step 1)
         const [result] = await connection.query(
-            'INSERT INTO cycles (initial_balance, status) VALUES (?, "OPEN")',
-            [initialBalance]
+            'INSERT INTO cycles (cycle_type, initial_balance, initial_currency, status) VALUES ("MAIN", 0, "USDT", "OPEN")'
         );
         const cycleId = result.insertId;
 
-        // 5. Registrar Transacción (Auditoría) - Débito Virtual o Log de Inicio
-        // Nota: En este sistema "Referencial", el saldo de wallet suele mantenerse "estático" como referencia 
-        // o se "congela". Según la lógica anterior, NO descontábamos el saldo de la wallet al iniciar, solo copiábamos.
-        // PERO el usuario pidió "Auditoría de TODAS las transacciones".
-        // Si queremos simular que el dinero "entra" al ciclo, deberíamos descontarlo de la wallet?
-        // El prompt anterior decía: "Congela saldo actual como initial_balance". 
-        // Vamos a mantener la lógica de "foto" pero registrando evento.
-        // SI el usuario quiere que se descuente, debería haberlo especificado. 
-        // Asumiremos que el dinero se "bloquea" en el ciclo.
-        // UPDATE: Para "auditoría de transacciones", vamos a registrar el evento CYCLE_START.
-
+        // 5. Auditoría
         await connection.query(
             'INSERT INTO transactions (wallet_id, cycle_id, type, amount, description) VALUES (?, ?, "CYCLE_START", ?, ?)',
-            [1, cycleId, 0, `Inicio de ciclo #${cycleId} con base ${initialBalance} USDT`]
+            [1, cycleId, 0, `Inicio de ciclo MAIN #${cycleId}`]
         );
 
         await connection.commit();
         res.status(201).json({
             success: true,
-            message: 'Ciclo iniciado',
+            message: 'Ciclo iniciado. Procede a registrar la venta de USDT.',
             cycleId,
-            initialBalance
+            availableUSDT: usdtBalance
         });
 
     } catch (error) {
         await connection.rollback();
-        res.status(400).json({ error: error.message }); // 400 Bad Request
+        res.status(400).json({ error: error.message });
     } finally {
         connection.release();
     }
@@ -203,6 +223,32 @@ router.post('/:id/step', async (req, res) => {
         await connection.beginTransaction();
 
         let vesSurplus = 0;
+
+        // Lógica especial para SELL_USDT_TO_VES: Descontar USDT de wallet
+        if (step_type === 'SELL_USDT_TO_VES') {
+            const usdtSold = parseFloat(input_amount);
+
+            // Verificar saldo disponible
+            const [wallet] = await connection.query('SELECT balance FROM wallet WHERE id = 1');
+            const currentUSDT = parseFloat(wallet[0].balance);
+
+            if (usdtSold > currentUSDT) {
+                throw new Error(`Saldo insuficiente. Disponible: ${currentUSDT} USDT, Intentando vender: ${usdtSold} USDT`);
+            }
+
+            // Descontar USDT de la wallet
+            const newUSDT = currentUSDT - usdtSold;
+            await connection.query('UPDATE wallet SET balance = ? WHERE id = 1', [newUSDT]);
+
+            // Actualizar initial_balance del ciclo
+            await connection.query('UPDATE cycles SET initial_balance = ? WHERE id = ?', [usdtSold, id]);
+
+            // Auditoría
+            await connection.query(
+                'INSERT INTO transactions (wallet_id, cycle_id, type, amount, description) VALUES (?, ?, "CYCLE_STEP", ?, ?)',
+                [1, id, -usdtSold, `Venta USDT→VES: ${usdtSold} USDT a tasa ${exchange_rate}`]
+            );
+        }
 
         // Lógica especial para BUY_USD_CASH: Calcular VES Surplus
         if (step_type === 'BUY_USD_CASH') {
@@ -366,39 +412,51 @@ router.post('/:id/close', async (req, res) => {
     try {
         await connection.beginTransaction();
 
-        // 1. Verificar último paso para obtener el balance final real
-        const [steps] = await connection.query(
+        // 1. Obtener el paso inicial (USDT vendido) - ES LA BASE REAL
+        const [step1] = await connection.query(
+            'SELECT input_amount FROM cycle_steps WHERE cycle_id = ? AND step_type = "SELL_USDT_TO_VES" ORDER BY id ASC LIMIT 1',
+            [id]
+        );
+
+        if (step1.length === 0) {
+            throw new Error('El ciclo no tiene el paso inicial (SELL_USDT_TO_VES) registrado.');
+        }
+
+        const usdtSold = parseFloat(step1[0].input_amount);
+
+        // 2. Obtener el paso final (USDT recuperado)
+        const [step5] = await connection.query(
             'SELECT output_amount FROM cycle_steps WHERE cycle_id = ? AND step_type = "CONVERT_TO_USDT" ORDER BY id DESC LIMIT 1',
             [id]
         );
 
-        if (steps.length === 0) {
+        if (step5.length === 0) {
             throw new Error('El ciclo no tiene el paso final (CONVERT_TO_USDT) registrado.');
         }
 
-        const finalBalance = parseFloat(steps[0].output_amount);
+        const usdtReturned = parseFloat(step5[0].output_amount);
 
-        // 2. Obtener balance inicial
-        const [cycle] = await connection.query('SELECT initial_balance FROM cycles WHERE id = ?', [id]);
-        if (cycle.length === 0) throw new Error('Ciclo no encontrado');
+        // 3. Calcular Spread REAL (basado en USDT que entró vs USDT que salió)
+        const spreadAmount = usdtReturned - usdtSold;
+        const spreadPercentage = (spreadAmount / usdtSold) * 100;
 
-        const initialBalance = parseFloat(cycle[0].initial_balance);
-        const spreadAmount = finalBalance - initialBalance;
-        const spreadPercentage = (spreadAmount / initialBalance) * 100;
-
-        // 3. Actualizar ciclo
+        // 4. Actualizar ciclo (guardamos USDT sold como initial, USDT returned como final)
         await connection.query(
-            'UPDATE cycles SET status = "COMPLETED", end_date = NOW(), final_balance =?, spread_amount = ?, spread_percentage = ? WHERE id = ?',
-            [finalBalance, spreadAmount, spreadPercentage, id]
+            'UPDATE cycles SET status = "COMPLETED", end_date = NOW(), initial_balance = ?, final_balance = ?, spread_amount = ?, spread_percentage = ? WHERE id = ?',
+            [usdtSold, usdtReturned, spreadAmount, spreadPercentage, id]
         );
 
-        // 4. Actualizar Billetera Principal
-        await connection.query('UPDATE wallet SET balance = ? WHERE id = 1', [finalBalance]);
+        // 5. Actualizar Billetera Principal: AGREGAR el USDT recuperado (no sobreescribir)
+        const [wallet] = await connection.query('SELECT balance FROM wallet WHERE id = 1');
+        const currentBalance = parseFloat(wallet[0].balance);
+        const newBalance = currentBalance + usdtReturned;
 
-        // 5. Auditoría
+        await connection.query('UPDATE wallet SET balance = ? WHERE id = 1', [newBalance]);
+
+        // 6. Auditoría
         await connection.query(
             'INSERT INTO transactions (wallet_id, cycle_id, type, amount, description) VALUES (?, ?, "CYCLE_CLOSE", ?, ?)',
-            [1, id, spreadAmount, `Cierre de ciclo. Balance final: ${finalBalance}`]
+            [1, id, usdtReturned, `Cierre de ciclo #${id}. Vendido: ${usdtSold} USDT, Recuperado: ${usdtReturned} USDT, Spread: ${spreadAmount.toFixed(2)} USDT`]
         );
 
         await connection.commit();
@@ -406,8 +464,8 @@ router.post('/:id/close', async (req, res) => {
             success: true,
             message: 'Ciclo cerrado correctamente',
             results: {
-                initialBalance,
-                finalBalance,
+                usdtSold,
+                usdtReturned,
                 spreadAmount,
                 spreadPercentage
             }

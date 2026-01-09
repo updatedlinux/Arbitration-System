@@ -458,7 +458,7 @@ function calcStep4() {
 
 async function loadHistory() {
     try {
-        const res = await fetchWithAuth(`${API_BASE}/cycles?limit=5`);
+        const res = await fetchWithAuth(`${API_BASE}/cycles?limit=10`);
         const data = await res.json();
         const tbody = document.getElementById('historyTableBody');
         tbody.innerHTML = '';
@@ -471,22 +471,25 @@ async function loadHistory() {
         data.data.forEach(cycle => {
             const spreadClass = cycle.spread_amount >= 0 ? 'text-success' : 'text-danger';
             const spreadIcon = cycle.spread_amount >= 0 ? '+' : '';
+            const typeLabel = cycle.cycle_type === 'VES_TO_USD' ? '🔄 VES' : '💱 MAIN';
 
             const tr = document.createElement('tr');
+            tr.style.cursor = 'pointer';
+            tr.onclick = () => showCycleDetails(cycle.id);
             tr.innerHTML = `
-                <td>#${cycle.id}</td>
+                <td>#${cycle.id} ${typeLabel}</td>
                 <td>${new Date(cycle.start_date).toLocaleDateString()}</td>
-                <td>${formatMoney(cycle.initial_balance)}</td>
+                <td>${formatMoney(cycle.initial_balance)} ${cycle.initial_currency || 'USDT'}</td>
                 <td>${cycle.final_balance ? formatMoney(cycle.final_balance) : '-'}</td>
-                <td class="${spreadClass}">${cycle.spread_amount ? `${spreadIcon}${formatMoney(cycle.spread_amount)} (${cycle.spread_percentage.toFixed(2)}%)` : '-'}</td>
-                <td><span class="status-badge ${cycle.status === 'OPEN' ? 'status-open' : 'status-completed'}">${cycle.status}</span></td>
+                <td class="${spreadClass}">${cycle.spread_amount !== null ? `${spreadIcon}${formatMoney(cycle.spread_amount)} (${cycle.spread_percentage?.toFixed(2) || 0}%)` : '-'}</td>
+                <td><span class="status-badge ${cycle.status === 'OPEN' ? 'status-open' : cycle.status === 'CANCELLED' ? 'status-cancelled' : 'status-completed'}">${cycle.status}</span></td>
             `;
             tbody.appendChild(tr);
         });
 
         const completed = data.data.find(c => c.status === 'COMPLETED');
         if (completed) {
-            document.getElementById('lastSpread').innerText = `${completed.spread_percentage.toFixed(2)}%`;
+            document.getElementById('lastSpread').innerText = `${completed.spread_percentage?.toFixed(2) || 0}%`;
             document.getElementById('lastSpreadAmount').innerText = `${completed.spread_amount >= 0 ? '+' : ''}${formatMoney(completed.spread_amount)} USDT`;
             document.getElementById('lastSpreadAmount').className = `stat-label ${completed.spread_amount >= 0 ? 'text-success' : 'text-danger'}`;
         }
@@ -496,6 +499,60 @@ async function loadHistory() {
     }
 }
 
+async function showCycleDetails(cycleId) {
+    try {
+        const res = await fetchWithAuth(`${API_BASE}/cycles/${cycleId}`);
+        const cycle = await res.json();
+
+        const stepNames = {
+            'SELL_USDT_TO_VES': 'Venta USDT → VES',
+            'BUY_USD_CASH': 'Compra USD Efectivo',
+            'DEPOSIT_KONTIGO': 'Depósito Kontigo',
+            'SEND_TO_BINANCE': 'Envío a Binance',
+            'CONVERT_TO_USDT': 'Conversión a USDT'
+        };
+
+        let stepsHtml = '';
+        if (cycle.steps && cycle.steps.length > 0) {
+            stepsHtml = cycle.steps.map((step, i) => `
+                <div style="padding: 0.5rem 0; border-bottom: 1px solid var(--border);">
+                    <strong>${i + 1}. ${stepNames[step.step_type] || step.step_type}</strong><br>
+                    <small>Entrada: ${formatMoney(step.input_amount)} → Salida: ${formatMoney(step.output_amount)}</small>
+                    ${step.exchange_rate ? `<br><small>Tasa: ${step.exchange_rate}</small>` : ''}
+                    ${step.ves_surplus > 0 ? `<br><small class="text-success">+${formatMoney(step.ves_surplus)} VES (Ganancia)</small>` : ''}
+                </div>
+            `).join('');
+        } else {
+            stepsHtml = '<p>No hay pasos registrados.</p>';
+        }
+
+        const typeLabel = cycle.cycle_type === 'VES_TO_USD' ? 'VES → USD' : 'USDT → VES → USD → USDT';
+        const spreadClass = cycle.spread_amount >= 0 ? 'text-success' : 'text-danger';
+
+        const content = `
+            <div style="text-align: left;">
+                <p><strong>Tipo:</strong> ${typeLabel}</p>
+                <p><strong>Estado:</strong> ${cycle.status}</p>
+                <p><strong>Base:</strong> ${formatMoney(cycle.initial_balance)} ${cycle.initial_currency || 'USDT'}</p>
+                <p><strong>Final:</strong> ${cycle.final_balance ? formatMoney(cycle.final_balance) + ' USDT' : '-'}</p>
+                <p><strong>Spread:</strong> <span class="${spreadClass}">${cycle.spread_amount !== null ? formatMoney(cycle.spread_amount) + ' USDT (' + cycle.spread_percentage?.toFixed(2) + '%)' : '-'}</span></p>
+                <hr style="border-color: var(--border); margin: 1rem 0;">
+                <h4>Pasos del Ciclo</h4>
+                ${stepsHtml}
+            </div>
+        `;
+
+        document.getElementById('modalTitle').innerText = `Ciclo #${cycleId}`;
+        document.getElementById('modalMessage').innerHTML = content;
+        document.getElementById('modalActions').innerHTML = '<button class="btn btn-primary" onclick="closeModal()">Cerrar</button>';
+        document.getElementById('modalContainer').classList.remove('hidden');
+
+    } catch (err) {
+        showModal('Error', 'No se pudo cargar el detalle del ciclo');
+    }
+}
+
 function formatMoney(amount) {
+    if (amount === null || amount === undefined) return '0.00';
     return parseFloat(amount).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
