@@ -23,6 +23,31 @@ async function setupDatabase() {
         console.log('Ejecutando script de base de datos...');
         await connection.query(sql);
 
+        // Migrations: Add missing columns to existing tables
+        console.log('Ejecutando migraciones...');
+        const migrations = [
+            // Cycles table
+            "ALTER TABLE cycles ADD COLUMN cycle_type ENUM('MAIN', 'VES_TO_USD') DEFAULT 'MAIN' AFTER id",
+            "ALTER TABLE cycles ADD COLUMN initial_currency VARCHAR(10) DEFAULT 'USDT' AFTER initial_balance",
+            // Cycle Steps table
+            "ALTER TABLE cycle_steps ADD COLUMN ves_surplus DECIMAL(20, 8) DEFAULT 0 AFTER fee",
+            "ALTER TABLE cycle_steps ADD COLUMN debit_amount DECIMAL(20, 8) NULL AFTER ves_surplus"
+        ];
+
+        for (const migration of migrations) {
+            try {
+                await connection.query(migration);
+                console.log('  ✅ Migración aplicada');
+            } catch (err) {
+                // Ignorar error si la columna ya existe (Duplicate column name)
+                if (err.code === 'ER_DUP_FIELDNAME') {
+                    // Column already exists, skip
+                } else {
+                    console.log(`  ⚠️ Migración omitida: ${err.message}`);
+                }
+            }
+        }
+
         // Seed Admin User if not exists
         const [users] = await connection.query('SELECT * FROM users WHERE username = "admin"');
         if (users.length === 0) {
