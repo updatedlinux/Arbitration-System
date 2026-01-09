@@ -481,15 +481,15 @@ async function loadHistory() {
                 <td>${new Date(cycle.start_date).toLocaleDateString()}</td>
                 <td>${formatMoney(cycle.initial_balance)} ${cycle.initial_currency || 'USDT'}</td>
                 <td>${cycle.final_balance ? formatMoney(cycle.final_balance) : '-'}</td>
-                <td class="${spreadClass}">${cycle.spread_amount !== null ? `${spreadIcon}${formatMoney(cycle.spread_amount)} (${cycle.spread_percentage?.toFixed(2) || 0}%)` : '-'}</td>
+                <td class="${spreadClass}">${cycle.spread_amount !== null ? `${spreadIcon}${formatMoney(cycle.spread_amount)} (${cycle.spread_percentage !== null ? parseFloat(cycle.spread_percentage).toFixed(2) : 0}%)` : '-'}</td>
                 <td><span class="status-badge ${cycle.status === 'OPEN' ? 'status-open' : cycle.status === 'CANCELLED' ? 'status-cancelled' : 'status-completed'}">${cycle.status}</span></td>
             `;
             tbody.appendChild(tr);
         });
 
         const completed = data.data.find(c => c.status === 'COMPLETED');
-        if (completed) {
-            document.getElementById('lastSpread').innerText = `${completed.spread_percentage?.toFixed(2) || 0}%`;
+        if (completed && completed.spread_percentage !== null) {
+            document.getElementById('lastSpread').innerText = `${parseFloat(completed.spread_percentage).toFixed(2)}%`;
             document.getElementById('lastSpreadAmount').innerText = `${completed.spread_amount >= 0 ? '+' : ''}${formatMoney(completed.spread_amount)} USDT`;
             document.getElementById('lastSpreadAmount').className = `stat-label ${completed.spread_amount >= 0 ? 'text-success' : 'text-danger'}`;
         }

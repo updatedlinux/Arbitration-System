@@ -112,13 +112,13 @@ router.post('/start-ves', async (req, res) => {
         // 5. Auditoría
         await connection.query(
             'INSERT INTO transactions (wallet_id, cycle_id, type, amount, description) VALUES (?, ?, "CYCLE_START", ?, ?)',
-            [2, cycleId, -vesBalance, `Inicio de ciclo VES→USD #${cycleId} con ${vesBalance} VES`]
+            [2, cycleId, -vesBalance, `Inicio de ciclo VES->USD #${cycleId} con ${vesBalance} VES`]
         );
 
         await connection.commit();
         res.status(201).json({
             success: true,
-            message: 'Ciclo VES→USD iniciado',
+            message: 'Ciclo VES->USD iniciado',
             cycleId,
             initialBalance: vesBalance,
             currency: 'VES'
@@ -246,7 +246,7 @@ router.post('/:id/step', async (req, res) => {
             // Auditoría
             await connection.query(
                 'INSERT INTO transactions (wallet_id, cycle_id, type, amount, description) VALUES (?, ?, "CYCLE_STEP", ?, ?)',
-                [1, id, -usdtSold, `Venta USDT→VES: ${usdtSold} USDT a tasa ${exchange_rate}`]
+                [1, id, -usdtSold, `Venta USDT->VES: ${usdtSold} USDT a tasa ${exchange_rate}`]
             );
         }
 
