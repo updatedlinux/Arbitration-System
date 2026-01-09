@@ -196,7 +196,7 @@
         let spreadChart = null;
 
         function getToken() {
-            return localStorage.getItem('token');
+            return localStorage.getItem('authToken');
         }
 
         async function fetchWithAuth(url, options = {}) {
@@ -209,7 +209,7 @@
             const res = await fetch(url, options);
 
             if (res.status === 401) {
-                localStorage.removeItem('token');
+                localStorage.removeItem('authToken');
                 window.location.href = '/';
                 return null;
             }
@@ -218,7 +218,7 @@
         }
 
         function logout() {
-            localStorage.removeItem('token');
+            localStorage.removeItem('authToken');
             window.location.href = '/';
         }
 
