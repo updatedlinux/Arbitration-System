@@ -9,6 +9,7 @@ require('dotenv').config();
 const authRoutes = require('./routes/auth');
 const walletRoutes = require('./routes/wallet');
 const cyclesRoutes = require('./routes/cycles');
+const reportsRoutes = require('./routes/reports');
 const verifyToken = require('./middleware/auth');
 
 const app = express();
@@ -29,6 +30,7 @@ app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpecs));
 app.use('/api/auth', authRoutes);
 app.use('/api/wallet', verifyToken, walletRoutes);
 app.use('/api/cycles', verifyToken, cyclesRoutes);
+app.use('/api/reports', verifyToken, reportsRoutes);
 
 // Redirigir cualquier otra ruta no API al frontend (SPA capability)
 app.get('*', (req, res) => {

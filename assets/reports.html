@@ -1,0 +1,430 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="theme-color" content="#FF6B35">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Arbitrage">
+    <title>Reportes - Daily Arbitrage System</title>
+    <link rel="manifest" href="manifest.json">
+    <link rel="icon" type="image/png" href="favicon.png">
+    <link rel="apple-touch-icon" href="favicon.png">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="css/style.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        .reports-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 1rem;
+            margin-bottom: 1.5rem;
+        }
+
+        .date-picker-container {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .date-picker-container input[type="date"] {
+            padding: 0.75rem 1rem;
+            border-radius: 8px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            background: var(--bg-card);
+            color: var(--text-primary);
+            font-size: 1rem;
+        }
+
+        .metrics-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1rem;
+            margin-bottom: 2rem;
+        }
+
+        .metric-card {
+            background: var(--bg-card);
+            border-radius: 12px;
+            padding: 1.25rem;
+            border: 1px solid rgba(255, 255, 255, 0.05);
+        }
+
+        .metric-card .label {
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+            margin-bottom: 0.5rem;
+        }
+
+        .metric-card .value {
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: var(--text-primary);
+        }
+
+        .metric-card .value.positive {
+            color: var(--success);
+        }
+
+        .metric-card .value.negative {
+            color: var(--danger);
+        }
+
+        .chart-container {
+            background: var(--bg-card);
+            border-radius: 12px;
+            padding: 1.5rem;
+            margin-bottom: 2rem;
+        }
+
+        .rates-section {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 1rem;
+            margin-bottom: 2rem;
+        }
+
+        .rate-card {
+            background: linear-gradient(135deg, rgba(255, 107, 53, 0.1), rgba(255, 140, 66, 0.05));
+            border-radius: 12px;
+            padding: 1.5rem;
+            border: 1px solid rgba(255, 107, 53, 0.2);
+        }
+
+        .rate-card h4 {
+            color: var(--primary);
+            margin-bottom: 0.5rem;
+        }
+
+        .rate-card .rate-value {
+            font-size: 2rem;
+            font-weight: 700;
+        }
+
+        .rate-card small {
+            color: var(--text-secondary);
+        }
+
+        .cycles-table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        .cycles-table th,
+        .cycles-table td {
+            padding: 0.75rem;
+            text-align: left;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+        }
+
+        .cycles-table th {
+            color: var(--text-secondary);
+            font-weight: 600;
+        }
+
+        .no-data {
+            text-align: center;
+            padding: 3rem;
+            color: var(--text-secondary);
+        }
+
+        .no-data i {
+            font-size: 3rem;
+            margin-bottom: 1rem;
+            opacity: 0.5;
+        }
+
+        @media (max-width: 768px) {
+            .reports-header {
+                flex-direction: column;
+                align-items: stretch;
+            }
+
+            .metrics-grid {
+                grid-template-columns: 1fr 1fr;
+            }
+
+            .metric-card .value {
+                font-size: 1.2rem;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <header>
+        <div class="logo-container">
+            <img src="favicon.png" alt="Logo" style="height: 32px;">
+            <h1>Reportes Diarios</h1>
+        </div>
+        <div>
+            <a href="/" class="btn btn-outline"><i class="fas fa-arrow-left"></i> Volver</a>
+            <button class="btn btn-outline" onclick="logout()"><i class="fas fa-sign-out-alt"></i></button>
+        </div>
+    </header>
+
+    <main>
+        <section class="card">
+            <div class="reports-header">
+                <div class="date-picker-container">
+                    <label><strong>Fecha:</strong></label>
+                    <input type="date" id="reportDate" onchange="loadReport()">
+                    <button class="btn btn-primary" onclick="loadReport()"><i class="fas fa-search"></i> Buscar</button>
+                </div>
+                <div>
+                    <button class="btn btn-outline" onclick="setToday()">Hoy</button>
+                    <button class="btn btn-outline" onclick="setYesterday()">Ayer</button>
+                </div>
+            </div>
+
+            <div id="reportContent">
+                <div class="no-data">
+                    <i class="fas fa-calendar-alt"></i>
+                    <p>Selecciona una fecha para ver el reporte</p>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <script>
+        const API_BASE = '/api';
+        let spreadChart = null;
+
+        function getToken() {
+            return localStorage.getItem('token');
+        }
+
+        async function fetchWithAuth(url, options = {}) {
+            const token = getToken();
+            if (!token) {
+                window.location.href = '/login.html';
+                return;
+            }
+            options.headers = { ...options.headers, 'Authorization': `Bearer ${token}` };
+            return fetch(url, options);
+        }
+
+        function logout() {
+            localStorage.removeItem('token');
+            window.location.href = '/login.html';
+        }
+
+        function setToday() {
+            document.getElementById('reportDate').value = new Date().toISOString().split('T')[0];
+            loadReport();
+        }
+
+        function setYesterday() {
+            const yesterday = new Date();
+            yesterday.setDate(yesterday.getDate() - 1);
+            document.getElementById('reportDate').value = yesterday.toISOString().split('T')[0];
+            loadReport();
+        }
+
+        function formatMoney(amount) {
+            if (amount === null || amount === undefined) return '0.00';
+            return parseFloat(amount).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        }
+
+        function formatRate(rate) {
+            return parseFloat(rate).toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 4 });
+        }
+
+        async function loadReport() {
+            const date = document.getElementById('reportDate').value;
+            if (!date) {
+                alert('Selecciona una fecha');
+                return;
+            }
+
+            try {
+                const res = await fetchWithAuth(`${API_BASE}/reports/daily?date=${date}`);
+                const data = await res.json();
+
+                if (!data.hasData) {
+                    document.getElementById('reportContent').innerHTML = `
+                        <div class="no-data">
+                            <i class="fas fa-inbox"></i>
+                            <p>${data.message}</p>
+                        </div>
+                    `;
+                    return;
+                }
+
+                renderReport(data);
+
+            } catch (err) {
+                console.error(err);
+                document.getElementById('reportContent').innerHTML = `
+                    <div class="no-data">
+                        <i class="fas fa-exclamation-triangle"></i>
+                        <p>Error al cargar el reporte</p>
+                    </div>
+                `;
+            }
+        }
+
+        function renderReport(data) {
+            const { summary, volumes, rates, spreadChart: chartData, cycles } = data;
+            const spreadClass = summary.totalSpread >= 0 ? 'positive' : 'negative';
+
+            const html = `
+                <!-- Resumen General -->
+                <div class="rates-section">
+                    <div class="rate-card">
+                        <h4><i class="fas fa-chart-line"></i> Spread Total del Dia</h4>
+                        <div class="rate-value ${spreadClass}">${summary.totalSpread >= 0 ? '+' : ''}${formatMoney(summary.totalSpread)} USDT</div>
+                        <small>${summary.totalCycles} ciclos (${summary.mainCycles} MAIN, ${summary.vesCycles} VES)</small>
+                    </div>
+                    <div class="rate-card">
+                        <h4><i class="fas fa-tags"></i> Tasa Promedio Venta USDT</h4>
+                        <div class="rate-value">${formatRate(rates.avgSellRate)} VES</div>
+                        <small>Basado en ${rates.sellRateCount} operaciones</small>
+                    </div>
+                    <div class="rate-card">
+                        <h4><i class="fas fa-shopping-cart"></i> Tasa Promedio Compra USD</h4>
+                        <div class="rate-value">${formatRate(rates.avgBuyRate)} VES</div>
+                        <small>Basado en ${rates.buyRateCount} operaciones</small>
+                    </div>
+                </div>
+
+                <!-- Volumenes -->
+                <h3 style="margin-bottom: 1rem; color: var(--text-secondary);">Volumenes del Dia</h3>
+                <div class="metrics-grid">
+                    <div class="metric-card">
+                        <div class="label">USDT Vendidos</div>
+                        <div class="value">${formatMoney(volumes.usdtSold)}</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="label">USD Efectivo Comprado</div>
+                        <div class="value">${formatMoney(volumes.usdCashBought)}</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="label">VES Ganados (Spread)</div>
+                        <div class="value positive">${formatMoney(volumes.vesEarned)}</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="label">VES Gastados</div>
+                        <div class="value">${formatMoney(volumes.vesSpent)}</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="label">USDC Depositados Kontigo</div>
+                        <div class="value">${formatMoney(volumes.usdcDeposited)}</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="label">USDC Retirados Kontigo</div>
+                        <div class="value">${formatMoney(volumes.usdcWithdrawn)}</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="label">USDC a Binance</div>
+                        <div class="value">${formatMoney(volumes.usdcToBinance)}</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="label">USDT Convertidos</div>
+                        <div class="value">${formatMoney(volumes.usdtConverted)}</div>
+                    </div>
+                </div>
+
+                <!-- Grafica de Spread -->
+                <div class="chart-container">
+                    <h3 style="margin-bottom: 1rem;">Spread por Ciclo</h3>
+                    <canvas id="spreadChartCanvas"></canvas>
+                </div>
+
+                <!-- Tabla de Ciclos -->
+                <h3 style="margin-bottom: 1rem; color: var(--text-secondary);">Ciclos del Dia</h3>
+                <div class="table-container">
+                    <table class="cycles-table">
+                        <thead>
+                            <tr>
+                                <th>ID</th>
+                                <th>Tipo</th>
+                                <th>Hora</th>
+                                <th>Base</th>
+                                <th>Final</th>
+                                <th>Spread</th>
+                                <th>Estado</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${cycles.map(c => {
+                const sClass = parseFloat(c.spread_amount) >= 0 ? 'positive' : 'negative';
+                return `
+                                    <tr>
+                                        <td>#${c.id}</td>
+                                        <td>${c.cycle_type === 'VES_TO_USD' ? '🔄 VES' : '💱 MAIN'}</td>
+                                        <td>${new Date(c.start_date).toLocaleTimeString()}</td>
+                                        <td>${formatMoney(c.initial_balance)} ${c.initial_currency || 'USDT'}</td>
+                                        <td>${c.final_balance ? formatMoney(c.final_balance) + ' USDT' : '-'}</td>
+                                        <td class="${sClass}">${c.spread_amount ? formatMoney(c.spread_amount) : '-'}</td>
+                                        <td>${c.status}</td>
+                                    </tr>
+                                `;
+            }).join('')}
+                        </tbody>
+                    </table>
+                </div>
+            `;
+
+            document.getElementById('reportContent').innerHTML = html;
+
+            // Render Chart
+            renderSpreadChart(chartData);
+        }
+
+        function renderSpreadChart(chartData) {
+            const ctx = document.getElementById('spreadChartCanvas').getContext('2d');
+
+            if (spreadChart) {
+                spreadChart.destroy();
+            }
+
+            spreadChart = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: chartData.map(d => `#${d.id} (${d.type === 'VES_TO_USD' ? 'VES' : 'MAIN'})`),
+                    datasets: [{
+                        label: 'Spread (USDT)',
+                        data: chartData.map(d => d.spread),
+                        backgroundColor: chartData.map(d => d.spread >= 0 ? 'rgba(0, 200, 83, 0.7)' : 'rgba(255, 61, 0, 0.7)'),
+                        borderColor: chartData.map(d => d.spread >= 0 ? '#00C853' : '#FF3D00'),
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    plugins: {
+                        legend: { display: false }
+                    },
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            grid: { color: 'rgba(255,255,255,0.05)' },
+                            ticks: { color: '#b3b3b3' }
+                        },
+                        x: {
+                            grid: { display: false },
+                            ticks: { color: '#b3b3b3' }
+                        }
+                    }
+                }
+            });
+        }
+
+        // Init
+        document.addEventListener('DOMContentLoaded', () => {
+            if (!getToken()) {
+                window.location.href = '/login.html';
+                return;
+            }
+            setToday();
+        });
+    </script>
+</body>
+
+</html>
