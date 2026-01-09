@@ -202,7 +202,7 @@
         async function fetchWithAuth(url, options = {}) {
             const token = getToken();
             if (!token) {
-                window.location.href = '/login.html';
+                window.location.href = '/';
                 return;
             }
             options.headers = { ...options.headers, 'Authorization': `Bearer ${token}` };
@@ -211,7 +211,7 @@
 
         function logout() {
             localStorage.removeItem('token');
-            window.location.href = '/login.html';
+            window.location.href = '/';
         }
 
         function setToday() {
@@ -419,7 +419,7 @@
         // Init
         document.addEventListener('DOMContentLoaded', () => {
             if (!getToken()) {
-                window.location.href = '/login.html';
+                window.location.href = '/';
                 return;
             }
             setToday();
